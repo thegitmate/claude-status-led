@@ -6,17 +6,31 @@ Claude Code runs this on session events. It does one cheap thing:
 write this session's state to ~/.claude-status-led/sessions/<id>.json.
 The daemon reads those files and drives the LED.
 
+States: "busy" (LED solid), "waiting" (LED blinks), "idle" (LED off).
+Anything that is not busy or waiting leaves the LED off, so "idle" keeps
+the session tracked without lighting anything.
+
 Event -> state mapping:
 
-    SessionStart      busy     a session opened
+    SessionStart      idle     session open but nothing wants you yet
     UserPromptSubmit  busy     you sent a prompt, Claude is working
-    Notification      waiting  Claude wants permission or input
-    Stop              waiting  Claude finished, your turn
+    PreToolUse        busy
+    PostToolUse       busy
+    Notification      waiting  Claude wants permission or an answer
+                      idle     ...unless it is the "waiting for your input"
+                               nudge Claude Code fires after ~60s idle,
+                               which is not a real request for anything
+    Stop              idle     Claude finished, your turn, nothing needed
     SessionEnd        (file removed)
 
-Set "stop_state": "busy" in ~/.claude-status-led/config.json if you would
-rather the LED stay solid when Claude finishes and only blink on
-permission prompts.
+The point of the split: blinking should mean "Claude is actually blocked
+on you", so it stays rare and therefore worth looking up for. Merely
+having finished a turn is not a request.
+
+Override in ~/.claude-status-led/config.json:
+    "stop_state": "waiting"  blink whenever Claude finishes a turn
+    "stop_state": "busy"     stay solid for the whole session
+    "idle_notification_state": "waiting"  blink on the 60s idle nudge too
 
 This must never break a Claude session, so every path is wrapped and the
 exit code is always 0. Standard library only.
@@ -34,12 +48,12 @@ SESSION_DIR = os.path.join(STATE_DIR, "sessions")
 CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
 
 EVENT_STATE = {
-    "SessionStart": "busy",
+    "SessionStart": "idle",
     "UserPromptSubmit": "busy",
     "PreToolUse": "busy",
     "PostToolUse": "busy",
     "Notification": "waiting",
-    "Stop": "waiting",
+    "Stop": "idle",
 }
 
 
@@ -85,6 +99,20 @@ def find_claude_pid():
     return None
 
 
+def notification_state(payload, cfg):
+    """
+    Claude Code fires Notification for two different things: a genuine
+    request (permission to run a tool, a question needing an answer) and a
+    plain "you have been idle a while" nudge. Only the first deserves the
+    blink, otherwise the LED lights up whenever you step away, which is
+    exactly the noise this state model exists to avoid.
+    """
+    message = str(payload.get("message", "")).lower()
+    if "waiting for your input" in message:
+        return cfg.get("idle_notification_state", "idle")
+    return "waiting"
+
+
 def main():
     # Event name comes from argv (how we configure it) or the hook payload.
     event = sys.argv[1] if len(sys.argv) > 1 else None
@@ -119,13 +147,17 @@ def main():
     if state is None:
         return
 
+    cfg = load_config()
     if event == "Stop":
-        state = load_config().get("stop_state", "waiting")
+        state = cfg.get("stop_state", "idle")
+    elif event == "Notification":
+        state = notification_state(payload, cfg)
 
     record = {
         "state": state,
         "event": event,
         "ts": time.time(),
+        "message": str(payload.get("message", ""))[:200],
         "pid": find_claude_pid(),
     }
 

@@ -1,5 +1,6 @@
 {
   "port": null,
-  "stop_state": "waiting",
+  "stop_state": "idle",
+  "idle_notification_state": "idle",
   "stale_seconds": 43200
 }

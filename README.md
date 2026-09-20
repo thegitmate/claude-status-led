@@ -4,9 +4,11 @@ An LED on your desk that tells you what Claude Code is doing, without you having
 
 | LED | Meaning |
 |---|---|
-| **Off** | No Claude Code session open |
-| **Solid on** | A session is open and Claude is working |
-| **Blinking** | Claude is waiting on you: a permission prompt, a question, or it has finished its turn |
+| **Off** | Nothing wants you: no session open, or simply your turn to type |
+| **Solid on** | Claude is working |
+| **Blinking** | Claude is blocked on you: a permission prompt, or a question it needs answered |
+
+Blinking deliberately does **not** mean "Claude finished its turn". If it did, the light would blink for most of the day and you would learn to ignore it. It blinks only when Claude genuinely cannot continue without you, which keeps it worth looking up for.
 
 It works with several sessions at once. If any session needs you, the light blinks. Otherwise, if any session is working, it stays solid. Otherwise it is off.
 
@@ -100,7 +102,8 @@ Claude can read the serial port list, flash the board and read the daemon log, s
 ```
 
 - **`port`** pins a specific serial device. `null` means find it automatically.
-- **`stop_state`** controls what happens when Claude finishes its turn. `"waiting"` blinks, which is what you want if you like knowing it is your turn. Change to `"busy"` if you only want blinking for permission prompts.
+- **`stop_state`** controls what happens when Claude finishes its turn. `"idle"` (the default) turns the LED off, because a finished turn is not a request for anything. `"waiting"` blinks every time Claude stops. `"busy"` keeps it solid for the whole session.
+- **`idle_notification_state`** handles the nudge Claude Code fires after roughly 60 seconds of idle input. `"idle"` (the default) ignores it, so stepping away from your desk does not start the light blinking. `"waiting"` blinks for it too.
 - **`stale_seconds`** is a safety net for session records whose process could not be identified.
 
 Changes are picked up within about five seconds, no restart needed.
@@ -160,9 +163,13 @@ Claude Code ──hooks──► session files ──► daemon ──serial─�
 
 | Hook event | State written |
 |---|---|
-| `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `busy` |
-| `Notification`, `Stop` | `waiting` |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `busy` |
+| `Notification` (permission or question) | `waiting` |
+| `Notification` (60s idle nudge) | `idle` |
+| `SessionStart`, `Stop` | `idle` |
 | `SessionEnd` | file removed |
+
+States are `busy` (solid), `waiting` (blink) and `idle` (off). `idle` is not special cased in the daemon: anything that is neither `busy` nor `waiting` contributes nothing, so an idle session stays tracked for liveness while leaving the LED dark.
 
 **The daemon** (`daemon/claude_led_daemon.py`) polls those files five times a second, aggregates them and sends a single byte to the board.
 

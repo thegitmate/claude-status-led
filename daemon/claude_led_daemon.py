@@ -20,6 +20,12 @@ sessions can be open at once, so the states are aggregated:
 any session waiting wins, otherwise any session working wins,
 otherwise the LED is off.
 
+A session record may also hold the state "idle", meaning the session is
+open but nothing wants your attention. It is deliberately not special
+cased below: anything that is neither "waiting" nor "busy" contributes
+nothing, so an idle session keeps being tracked for liveness while
+leaving the LED dark.
+
 Standard library only. No pip, no venv.
 """
 

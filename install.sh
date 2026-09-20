@@ -84,7 +84,25 @@ cat > "$PLIST" <<PLISTEOF
 PLISTEOF
 
 launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$UID" "$PLIST"
+
+# launchd does not always release the label immediately after bootout.
+# Bootstrapping too soon fails with "Input/output error" and, under set -e,
+# aborts this script leaving nothing running. So retry a few times.
+bootstrapped=0
+for _ in 1 2 3 4 5; do
+  if launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null; then
+    bootstrapped=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$bootstrapped" -ne 1 ] || ! launchctl list | grep -q "$LABEL"; then
+  echo >&2
+  echo "Warning: the daemon did not start. Start it by hand with:" >&2
+  echo "  launchctl bootstrap gui/\$UID $PLIST" >&2
+  echo "then check:  launchctl list | grep $LABEL   (middle column 0 = healthy)" >&2
+fi
 
 echo
 echo "Installed."
