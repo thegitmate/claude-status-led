@@ -64,7 +64,7 @@ tail -f ~/.claude-status-led/daemon.log    # state -> 0 off, 1 solid, 2 blink
 | `port` | `null` | Pin a serial device, or autodetect |
 | `stop_state` | `idle` | What happens when Claude finishes a turn. `waiting` blinks instead |
 | `idle_notification_state` | `idle` | Whether the 60s idle nudge blinks |
-| `blink_timeout_seconds` | `300` | Backstop only. Blinks normally clear in ~5s |
+| `blink_timeout_seconds` | `300` | Backstop for sessions with no findable transcript. Ignored when one exists |
 | `stale_seconds` | `43200` | Fallback expiry for unidentifiable sessions |
 | `event_log` | `true` | Log every hook event to `events.log`. Leave on |
 

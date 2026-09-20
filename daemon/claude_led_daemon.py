@@ -269,7 +269,12 @@ def desired_state(cfg):
             session_id = name[:-5]
             if blink_is_stale(session_id, rec_ts, now):
                 state = "idle"
-            else:
+            elif transcript_for(session_id) is None:
+                # Backstop, and ONLY for sessions whose transcript we cannot
+                # find. Where a transcript exists it is authoritative: a
+                # question that is genuinely still on screen should keep
+                # blinking however long you take, and a timeout here would
+                # silently cut it off mid-prompt.
                 timeout = cfg.get("blink_timeout_seconds", BLINK_TIMEOUT_DEFAULT)
                 if timeout and (now - rec_ts) > timeout:
                     state = "idle"

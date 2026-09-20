@@ -43,6 +43,12 @@ The first version treated any growth as resolution, so one of those would kill t
 
 So the daemon settles for 3 seconds, records a byte offset, and on growth reads only what was appended, clearing the blink only if an entry of type `user`, `assistant` or `system` appears. Latency is about 5 seconds.
 
+### The backstop applies only without a transcript
+
+`blink_timeout_seconds` exists for sessions whose transcript cannot be found. Where a transcript exists it is authoritative, and the timeout is skipped entirely.
+
+This matters because a timeout is indistinguishable from a bug when you are looking at the light. A question genuinely still on screen must keep blinking however long you take to answer it. An earlier version applied the timeout unconditionally, and a stale `60` left in a config file cut a live prompt off after exactly one minute, which looked identical to the transcript bug above and was not.
+
 This approach is borrowed from [Claw Light](https://clawlight.dev/), which watches session files rather than relying on hooks. [Agent Light](https://github.com/eternityspring/agent-light) is hook-driven and has the same blind spot.
 
 ## Why `PostToolUse` is registered despite firing constantly
