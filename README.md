@@ -22,6 +22,22 @@ Built for macOS and an Arduino Nano. No Arduino IDE needed, no Python packages, 
 - A USB **data** cable that fits your Nano. Read that word again, it is the single most common thing that goes wrong. See Troubleshooting.
 - A Mac with Homebrew
 
+## One-prompt install
+
+Never touched an Arduino? Don't follow the steps below. Paste this into Claude Code instead, from any folder:
+
+```
+Install github.com/thegitmate/claude-status-led on my Mac. Read the README,
+do everything you can yourself, and stop to ask me whenever you need hands
+on the wiring or eyes on the LED.
+```
+
+That is the whole thing. Claude will clone the repo, install `arduino-cli` if it is missing, flash the board, run `install.sh` and confirm the daemon is healthy. It can list your serial ports and read the daemon log, so it can diagnose most of what goes wrong by itself.
+
+The two things it cannot do are hold a wire and see your LED, which is why the prompt tells it to ask you. When it asks what the light did, answer honestly, including "nothing happened": that is useful information, not a failure.
+
+Everything below is the same install done by hand.
+
 ## Wiring
 
 ```
@@ -80,14 +96,6 @@ tail -f ~/.claude-status-led/daemon.log   # watch state changes live
 ```
 
 The log prints a line each time the state changes: `state -> 1` is solid, `2` is blinking, `0` is off.
-
-## Letting Claude install it for you
-
-If you have never touched an Arduino, the fastest route is to let Claude Code do the whole thing. Open a session in the cloned folder and paste this:
-
-> I've got an Arduino Nano connected by USB and an LED wired to D9 through a 220Ω resistor. Read the README in this folder, then install this project for me: install arduino-cli if it's missing, flash the firmware, run install.sh, and confirm the daemon is healthy. If the board doesn't show up, help me work out whether it's the cable or the board.
-
-Claude can read the serial port list, flash the board and read the daemon log, so it can diagnose most problems itself. The one thing it cannot do is see your LED, so when it asks you what the light did, tell it.
 
 ## Configuration
 
