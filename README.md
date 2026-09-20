@@ -65,6 +65,7 @@ tail -f ~/.claude-status-led/daemon.log    # state -> 0 off, 1 solid, 2 blink
 | `stop_state` | `idle` | What happens when Claude finishes a turn. `waiting` blinks instead |
 | `idle_notification_state` | `idle` | Whether the 60s idle nudge blinks |
 | `blink_timeout_seconds` | `300` | Backstop for sessions with no findable transcript. Ignored when one exists |
+| `busy_silence_seconds` | `60` | Turn the LED off when a busy session writes nothing at all for this long. Catches stopping Claude before it replies |
 | `stale_seconds` | `43200` | Fallback expiry for unidentifiable sessions |
 | `event_log` | `true` | Log every hook event to `events.log`. Leave on |
 
@@ -83,6 +84,8 @@ Picked up within 5 seconds, no restart.
 **LED dark but the log says `state -> 1`** Wiring. The daemon reports what it sent, it cannot see the light.
 
 **LED stays on after you stop Claude mid-answer** Interrupting fires no hook, so the daemon watches the transcript for the interrupt entry instead. Clears within a couple of seconds.
+
+**LED stays on if you stop Claude before it replies** Nothing is written in that case, not even an interrupt marker, so it clears after `busy_silence_seconds` (60) instead. It cannot be made faster without switching the light off during slow replies, which take up to 59 seconds to produce their first output.
 
 **LED stuck on with no session running** The firmware drops to off after 10s of silence, so this should be impossible. If it happens, reflash.
 

@@ -50,6 +50,7 @@ CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
 POLL_SECONDS = 0.2          # how often we re-read session state
 BLINK_TIMEOUT_DEFAULT = 300 # backstop only; transcript watching does the real work
 BLINK_GRACE_SECONDS = 3     # settle time before we trust the transcript baseline
+BUSY_SILENCE_DEFAULT = 60   # busy + zero transcript growth this long = stopped
 
 TRANSCRIPT_ROOT = os.path.join(HOME, ".claude", "projects")
 
@@ -131,7 +132,7 @@ def entry_is_interrupt(entry):
     return False
 
 
-def busy_is_stale(session_id, rec_ts, now):
+def busy_is_stale(session_id, rec_ts, now, cfg):
     """
     Decide whether a session that looks busy has actually been stopped.
 
@@ -139,9 +140,23 @@ def busy_is_stale(session_id, rec_ts, now):
     so the session record stays "busy" and the LED stays lit until the next
     prompt, sometimes for a long time. The transcript does record it.
 
-    Deliberately not done by watching for the transcript going quiet: a
-    single long tool call writes nothing for minutes while genuinely
-    working, so silence is not evidence of having stopped.
+    Not done by watching for the transcript going quiet: a single long tool
+    call writes nothing for minutes while genuinely working, so silence on
+    its own is not evidence of having stopped.
+
+    Interrupting BEFORE Claude has written anything is a separate case.
+    There is nothing to interrupt yet, so no marker is written either, and
+    the only remaining signal is that the transcript never grew at all.
+    That is what busy_silence_seconds covers.
+
+    It is deliberately slow. Measured over 35 turns of real use, the gap
+    between a prompt and Claude's first transcript entry had a median of 7
+    seconds and a maximum of 59. Any threshold under a minute would switch
+    the LED off in the middle of a slow reply, which is the same class of
+    lie this file exists to avoid.
+
+    The fallback requires ZERO growth, so a long tool call never trips it:
+    the tool_use entry is written before the tool starts running.
     """
     path = transcript_for(session_id)
     if not path:
@@ -157,7 +172,9 @@ def busy_is_stale(session_id, rec_ts, now):
 
     tail = read_tail(path, baseline[1])
     if not tail:
-        return False
+        # Nothing written at all since this session last did anything.
+        silence = cfg.get("busy_silence_seconds", BUSY_SILENCE_DEFAULT)
+        return bool(silence) and (now - rec_ts) > silence
 
     for line in tail.splitlines():
         line = line.strip()
@@ -362,7 +379,7 @@ def desired_state(cfg):
         if state == "waiting":
             any_waiting = True
         elif state == "busy":
-            if busy_is_stale(session_id, rec.get("ts", 0), now):
+            if busy_is_stale(session_id, rec.get("ts", 0), now, cfg):
                 state = "idle"
             else:
                 any_busy = True

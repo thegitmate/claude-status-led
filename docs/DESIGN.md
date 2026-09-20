@@ -67,6 +67,22 @@ Two things this must not do:
 - **Match the text rather than the entry.** That exact phrase appears in ordinary assistant messages whenever interrupts are being discussed, including in this project's own conversations. Detection parses each entry and requires `type: "user"` with content starting with the marker.
 - **Treat silence as having stopped.** A single long tool call writes nothing for minutes while genuinely working, so a quiet transcript is not evidence of a stopped turn.
 
+### Interrupting before Claude has written anything
+
+A third case, and the hardest. Stop the turn before any output exists and there is nothing to interrupt, so **no marker is written at all**. The transcript simply shows your prompt, then your next prompt.
+
+No event fires and no marker appears, so the only remaining signal is that the transcript never grew. `busy_silence_seconds` covers it, and it is deliberately slow.
+
+Measured over 35 turns of real use, the gap between a prompt and Claude's first transcript entry was:
+
+| median | 90th | max |
+|---|---|---|
+| 7s | 26s | 59s |
+
+So anything under a minute switches the LED off in the middle of a slow reply. The default is 60 seconds, which is the smallest honest number. Claude Code's own idle notification also fires around then, so in practice whichever lands first clears it.
+
+The fallback requires **zero** growth, which is what keeps long tool calls safe: the `tool_use` entry is written before the tool starts, so a ten minute command still counts as working.
+
 A turn that dies from an API limit or a dropped connection is not proven to be covered, because it could not be reproduced. If it happens, `events.log` will show whether `StopFailure` fires, which is already registered and mapped to off.
 
 ## Why `PostToolUse` is registered despite firing constantly
