@@ -376,6 +376,17 @@ def desired_state(cfg):
 
     reported = claude_reported_status()
 
+    # PRIMARY SOURCE: Claude Code's own status, which needs no hooks and is
+    # therefore right in the cases hooks cannot see. Sessions it knows about
+    # are decided here, including ones that started before this was
+    # installed and have no hook records at all.
+    for session_id, status in reported.items():
+        if status == "waiting":
+            any_waiting = True
+        elif status == "busy":
+            any_busy = True
+        # idle and shell contribute nothing
+
     for name in entries:
         if not name.endswith(".json"):
             continue
@@ -422,10 +433,11 @@ def desired_state(cfg):
         # "blink_timeout_seconds": 0 to blink indefinitely instead.
         session_id = name[:-5]
 
-        # Claude Code says this session is doing nothing. It knows better
-        # than any inference we make from hooks, which do not fire when a
-        # prompt is cancelled, so this wins outright.
-        if reported.get(session_id) in NOT_WORKING_STATUSES:
+        # FALLBACK ONLY. If Claude Code reported this session above, its
+        # answer stands and the hook record is ignored entirely, whatever
+        # it says. The hook and transcript machinery below now only serves
+        # sessions Claude Code does not publish.
+        if session_id in reported:
             continue
 
         if state == "waiting":
@@ -508,7 +520,14 @@ def main():
                     os.write(fd, want)
                     last_sent = want
                     last_ping = now
-                    log("state -> %s" % want.decode())
+                    try:
+                        reported = claude_reported_status()
+                        detail = " (claude: %s)" % (
+                            ", ".join("%s=%s" % (k[:8], v)
+                                      for k, v in sorted(reported.items())) or "none")
+                    except Exception:
+                        detail = ""
+                    log("state -> %s%s" % (want.decode(), detail))
                 elif now - last_ping >= PING_SECONDS:
                     os.write(fd, b"p")
                     last_ping = now

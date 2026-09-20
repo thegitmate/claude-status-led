@@ -55,6 +55,14 @@ launchctl list | grep claude-status-led   # middle column 0 = healthy
 tail -f ~/.claude-status-led/daemon.log    # state -> 0 off, 1 solid, 2 blink
 ```
 
+## Tests
+
+```bash
+/usr/bin/python3 tests/test_states.py
+```
+
+Thirteen state-aggregation cases, run against temporary directories. They never touch live session state, so they do not drive your LED.
+
 ## Configuration
 
 `~/.claude-status-led/config.json`:
@@ -99,7 +107,9 @@ When anything is odd, read `~/.claude-status-led/events.log`. It shows exactly w
 Claude Code ──hooks──► session files ──► daemon ──serial──► Arduino
 ```
 
-One JSON file per session, aggregated by a launchd daemon that holds the serial port and sends one byte: `0` off, `1` on, `2` blink, `p` heartbeat. Blinking runs on the board, so its rhythm never depends on the Mac.
+State comes from two sources. **Claude Code's own `~/.claude/sessions/<pid>.json` is primary**, since it needs no hooks and is therefore correct in the cases where hooks fire nothing at all. Hooks and transcript watching are the fallback for sessions it does not report.
+
+A launchd daemon aggregates them, holds the serial port and sends one byte: `0` off, `1` on, `2` blink, `p` heartbeat. Blinking runs on the board, so its rhythm never depends on the Mac.
 
 Several decisions here are non-obvious and were arrived at by being wrong first. See **[docs/DESIGN.md](docs/DESIGN.md)** for why it is built this way, and **[docs/LESSONS.md](docs/LESSONS.md)** for everything that went wrong and how it was found, which is the useful document if you are building something similar.
 
