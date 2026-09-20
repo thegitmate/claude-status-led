@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Install the Mac side: Claude Code hooks + a launchd agent for the daemon.
+# Install the Mac side: a launchd agent running the daemon.
+# No Claude Code hooks are needed; the daemon reads Claude Code's own
+# session state directly. Any hooks from an older version are removed.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
@@ -7,80 +9,52 @@ STATE_DIR="$HOME/.claude-status-led"
 SETTINGS="$HOME/.claude/settings.json"
 LABEL="com.claude-status-led.daemon"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-PY=/usr/bin/python3
 
-mkdir -p "$STATE_DIR/sessions" "$STATE_DIR/bin" "$HOME/Library/LaunchAgents" "$HOME/.claude"
+mkdir -p "$STATE_DIR/bin" "$HOME/Library/LaunchAgents"
 
-# Copy the scripts out of the repo and into ~/.claude-status-led/bin.
-# This is NOT cosmetic. A launchd agent runs without TCC privileges, so it
-# cannot read ~/Documents, ~/Desktop or ~/Downloads: you get
-# "Operation not permitted" and the daemon never starts. The home
-# directory root is not TCC-protected, so the daemon can be read there.
-# Re-run this script after you change the code, to copy it across again.
+# Copy the daemon out of the repo. This is NOT cosmetic: a launchd agent
+# runs without TCC privileges and cannot read ~/Documents, ~/Desktop or
+# ~/Downloads, so running it from a repo cloned there fails with
+# "Operation not permitted". Re-run this script after changing the code.
 cp "$REPO/daemon/claude_led_daemon.py" "$STATE_DIR/bin/claude_led_daemon.py"
-cp "$REPO/hooks/claude_led_hook.py" "$STATE_DIR/bin/claude_led_hook.py"
-chmod +x "$STATE_DIR/bin/claude_led_daemon.py" "$STATE_DIR/bin/claude_led_hook.py"
-echo "Copied scripts to $STATE_DIR/bin"
+chmod +x "$STATE_DIR/bin/claude_led_daemon.py"
+echo "Copied daemon to $STATE_DIR/bin"
 
 if [ ! -f "$STATE_DIR/config.json" ]; then
   cp "$REPO/config.example.json" "$STATE_DIR/config.json"
   echo "Wrote default config to $STATE_DIR/config.json"
 fi
 
-echo "Adding hooks to $SETTINGS ..."
-"$PY" - "$SETTINGS" "$STATE_DIR" <<'PYEOF'
-import json, os, shutil, sys, time
-
-settings_path, state_dir = sys.argv[1], sys.argv[2]
-hook = os.path.join(state_dir, "bin", "claude_led_hook.py")
-
-data = {}
-if os.path.exists(settings_path):
-    shutil.copy(settings_path, settings_path + ".backup-%d" % int(time.time()))
-    try:
-        with open(settings_path) as fh:
-            data = json.load(fh)
-    except Exception:
-        print("Existing settings.json is not valid JSON; aborting.", file=sys.stderr)
-        raise SystemExit(1)
-
-hooks = data.setdefault("hooks", {})
-EVENTS = [
-    "SessionStart",
-    "UserPromptSubmit",
-    "Notification",
-    "PermissionRequest",
-    # Dismissal paths. Without these, pressing Esc on a prompt leaves the LED
-    # blinking at a question that is no longer on screen, until you happen to
-    # send your next message.
-    "PermissionDenied",
-    "ElicitationResult",
-    "PostToolUseFailure",
-    # Fires when a tool completes, including a question you answered. This is
-    # the only signal that separates answering from dismissing.
-    "PostToolUse",
-    "Stop",
-    "StopFailure",
-    "SessionEnd",
-]
-
-for event in EVENTS:
-    command = "/usr/bin/python3 %s %s" % (hook, event)
-    entries = hooks.setdefault(event, [])
-    # Drop any previous install of ours, then add a fresh entry.
+# Older versions installed hooks. Take them back out.
+if [ -f "$SETTINGS" ]; then
+  /usr/bin/python3 - "$SETTINGS" <<'PYEOF'
+import json, shutil, sys, time
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except Exception:
+    raise SystemExit(0)
+hooks = data.get("hooks", {})
+removed = 0
+for event, entries in list(hooks.items()):
     for entry in list(entries):
         for h in list(entry.get("hooks", [])):
             if "claude_led_hook.py" in h.get("command", ""):
-                entry["hooks"].remove(h)
+                entry["hooks"].remove(h); removed += 1
         if not entry.get("hooks"):
             entries.remove(entry)
-    entries.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
-
-with open(settings_path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-print("Hooks installed.")
+    if not entries:
+        del hooks[event]
+if removed:
+    shutil.copy(path, path + ".backup-%d" % int(time.time()))
+    if not hooks:
+        data.pop("hooks", None)
+    json.dump(data, open(path, "w"), indent=2); open(path, "a").write("\n")
+    print("Removed %d hook(s) from a previous version." % removed)
 PYEOF
+fi
+rm -f "$STATE_DIR/bin/claude_led_hook.py" "$STATE_DIR/events.log"
+rm -rf "$STATE_DIR/sessions"
 
 echo "Installing launchd agent ..."
 cat > "$PLIST" <<PLISTEOF
@@ -104,28 +78,26 @@ PLISTEOF
 
 launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
 
-# launchd does not always release the label immediately after bootout.
-# Bootstrapping too soon fails with "Input/output error" and, under set -e,
-# aborts this script leaving nothing running. So retry a few times.
+# launchd does not always release the label immediately after bootout, and
+# bootstrapping too soon fails with "Input/output error", which under set -e
+# aborts this script leaving nothing running. Retry.
 bootstrapped=0
 for _ in 1 2 3 4 5; do
-  if launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null; then
-    bootstrapped=1
-    break
-  fi
+  if launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null; then bootstrapped=1; break; fi
   sleep 1
 done
+
+# launchd registers the job asynchronously, so give it a moment before
+# checking, otherwise this reports a failure for an agent that did start.
+sleep 2
 
 if [ "$bootstrapped" -ne 1 ] || ! launchctl list | grep -q "$LABEL"; then
   echo >&2
   echo "Warning: the daemon did not start. Start it by hand with:" >&2
   echo "  launchctl bootstrap gui/\$UID $PLIST" >&2
-  echo "then check:  launchctl list | grep $LABEL   (middle column 0 = healthy)" >&2
 fi
 
 echo
-echo "Installed."
-echo "  Daemon log:  $STATE_DIR/daemon.log"
-echo "  Config:      $STATE_DIR/config.json"
-echo
-echo "Open a NEW Claude Code session for the hooks to take effect."
+echo "Installed. No Claude Code restart needed."
+echo "  Log:    $STATE_DIR/daemon.log"
+echo "  Config: $STATE_DIR/config.json"

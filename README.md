@@ -10,7 +10,7 @@ An LED on your desk that shows what Claude Code is doing, so you can stop watchi
 
 Works across several sessions at once. If any session needs you it blinks, even if that terminal is buried behind other windows.
 
-macOS and an Arduino Nano. No Arduino IDE, no pip, no venv.
+macOS and an Arduino Nano. No Arduino IDE, no pip, no venv, and no Claude Code hooks: it reads Claude Code's own session state, so it adds nothing to your sessions.
 
 ## Install with one prompt
 
@@ -85,31 +85,30 @@ Picked up within 5 seconds, no restart.
 
 **Upload fails, "not in sync"** Clone board with the old bootloader. `flash.sh` retries automatically.
 
-**Daemon: "Operation not permitted"** launchd cannot read `~/Documents`. `install.sh` copies scripts to `~/.claude-status-led/bin/`, so **re-run `install.sh` after changing code**.
-
-**LED blinks at a prompt you dismissed** Clears in about 5 seconds. If not, the session transcript could not be found.
+**Daemon: "Operation not permitted"** launchd cannot read `~/Documents`. `install.sh` copies the daemon to `~/.claude-status-led/bin/`, so **re-run `install.sh` after changing code**.
 
 **LED dark but the log says `state -> 1`** Wiring. The daemon reports what it sent, it cannot see the light.
 
-**LED stays on after you stop Claude mid-answer** Interrupting fires no hook, so the daemon watches the transcript for the interrupt entry instead. Clears within a couple of seconds.
+**LED stuck on** The firmware drops to off after 10s of silence, so this should be impossible. If it happens, reflash.
 
-**LED stays on if you stop Claude before it replies** Cleared using Claude Code's own session status at `~/.claude/sessions/<pid>.json`, which reports `idle` even though no hook fires and nothing is written to the transcript.
+**LED never comes on** Check `~/.claude/sessions/` exists and holds a `.json` per running session. Everything depends on it:
 
-**LED stays on if you stop Claude before it replies (fallback)** Nothing is written in that case, not even an interrupt marker, so it clears after `busy_silence_seconds` (60) instead. It cannot be made faster without switching the light off during slow replies, which take up to 59 seconds to produce their first output.
+```bash
+cat ~/.claude/sessions/*.json | /usr/bin/python3 -c "import json,sys
+for l in sys.stdin.read().replace('}{','}\n{').splitlines(): print(json.loads(l)['status'])"
+```
 
-**LED stuck on with no session running** The firmware drops to off after 10s of silence, so this should be impossible. If it happens, reflash.
-
-When anything is odd, read `~/.claude-status-led/events.log`. It shows exactly which events arrived.
+`~/.claude-status-led/daemon.log` names the session behind every state change.
 
 ## How it works
 
 ```
-Claude Code ──hooks──► session files ──► daemon ──serial──► Arduino
+~/.claude/sessions/<pid>.json  ──►  daemon  ──serial──►  Arduino
 ```
 
-State comes from two sources. **Claude Code's own `~/.claude/sessions/<pid>.json` is primary**, since it needs no hooks and is therefore correct in the cases where hooks fire nothing at all. Hooks and transcript watching are the fallback for sessions it does not report.
+Claude Code writes a live record per session carrying a `status` of `busy`, `waiting`, `idle` or `shell`. A launchd daemon reads them twice a second, aggregates, and sends one byte: `0` off, `1` on, `2` blink, `p` heartbeat. Blinking runs on the board, so its rhythm never depends on the Mac.
 
-A launchd daemon aggregates them, holds the serial port and sends one byte: `0` off, `1` on, `2` blink, `p` heartbeat. Blinking runs on the board, so its rhythm never depends on the Mac.
+**No hooks.** An earlier version used them and needed transcript parsing, timeouts and a silence fallback to cover the cases where Claude Code fires nothing, at a cost of a process spawn on every tool call. Reading Claude Code's own state removed all of it.
 
 Several decisions here are non-obvious and were arrived at by being wrong first. See **[docs/DESIGN.md](docs/DESIGN.md)** for why it is built this way, and **[docs/LESSONS.md](docs/LESSONS.md)** for everything that went wrong and how it was found, which is the useful document if you are building something similar.
 

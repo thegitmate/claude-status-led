@@ -1,6 +1,9 @@
 # Design notes
 
-Why this is built the way it is. Every decision below replaced something simpler that did not work.
+Why this is built the way it is.
+
+The short version: **it reads Claude Code's own session state and does nothing clever.** Everything below the first section is history, kept because it explains why the obvious-looking alternatives do not work.
+
 
 ## Why a daemon, not hooks talking to the board
 

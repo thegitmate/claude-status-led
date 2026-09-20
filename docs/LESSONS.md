@@ -24,7 +24,9 @@ Two traps:
 - The file is named by **process id**, but the identity you want is the `sessionId` field inside it. Check the process is still alive.
 - **`shell` does not mean a shell command is running.** During an actual Bash tool call the status is `busy`. `shell` means the prompt is waiting for you. Treat `shell` and `idle` as "not working" and it behaves.
 
-Most of this project is hook and transcript archaeology done before finding that file. It works, but if you are starting now, start there.
+This project originally did it the hard way, with hooks and transcript parsing. Once that file was found, all of it was deleted: the daemon went from 340 lines to 241, the 200-line hook script and all 11 registered hooks went away, and the per-tool-call cost went to zero.
+
+The rest of this document is what that hard way cost. Read it to understand why the shortcut matters, not as a guide to copy.
 
 ## Claude Code fires no hooks for anything cancelled
 
