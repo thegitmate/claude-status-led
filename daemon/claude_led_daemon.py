@@ -87,6 +87,91 @@ CONVERSATION_TYPES = ("user", "assistant", "system")
 MAX_TAIL_BYTES = 2 * 1024 * 1024
 
 
+INTERRUPT_PREFIX = "[Request interrupted by user"
+
+# sid -> (record ts, byte offset) for busy records
+_busy_baselines = {}
+
+
+def read_tail(path, offset):
+    """Return everything appended past `offset`, or None."""
+    try:
+        if os.path.getsize(path) <= offset:
+            return None
+        with open(path, "rb") as fh:
+            fh.seek(offset)
+            return fh.read(MAX_TAIL_BYTES)
+    except OSError:
+        return None
+
+
+def entry_is_interrupt(entry):
+    """
+    True for the line Claude Code writes when a turn is interrupted:
+    a user entry whose content starts with "[Request interrupted by user".
+
+    Note this parses properly rather than searching the raw text. That
+    string appears in ordinary assistant messages whenever the interrupt
+    behaviour is being discussed, and a substring match would treat Claude
+    talking about interrupts as an interrupt.
+    """
+    if entry.get("type") != "user":
+        return False
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content.startswith(INTERRUPT_PREFIX)
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and \
+                    str(block.get("text", "")).startswith(INTERRUPT_PREFIX):
+                return True
+    return False
+
+
+def busy_is_stale(session_id, rec_ts, now):
+    """
+    Decide whether a session that looks busy has actually been stopped.
+
+    Interrupting a turn (Esc while Claude is working) fires no hook at all,
+    so the session record stays "busy" and the LED stays lit until the next
+    prompt, sometimes for a long time. The transcript does record it.
+
+    Deliberately not done by watching for the transcript going quiet: a
+    single long tool call writes nothing for minutes while genuinely
+    working, so silence is not evidence of having stopped.
+    """
+    path = transcript_for(session_id)
+    if not path:
+        return False
+
+    baseline = _busy_baselines.get(session_id)
+    if baseline is None or baseline[0] != rec_ts:
+        try:
+            _busy_baselines[session_id] = (rec_ts, os.path.getsize(path))
+        except OSError:
+            pass
+        return False
+
+    tail = read_tail(path, baseline[1])
+    if not tail:
+        return False
+
+    for line in tail.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line.decode("utf-8", "replace"))
+        except Exception:
+            continue
+        if entry_is_interrupt(entry):
+            return True
+    return False
+
+
 def blink_is_stale(session_id, rec_ts, now):
     """
     Decide whether a blinking prompt has already been answered or dismissed.
@@ -121,14 +206,8 @@ def blink_is_stale(session_id, rec_ts, now):
             pass
         return False
 
-    offset = baseline[1]
-    try:
-        if os.path.getsize(path) <= offset:
-            return False
-        with open(path, "rb") as fh:
-            fh.seek(offset)
-            tail = fh.read(MAX_TAIL_BYTES)
-    except OSError:
+    tail = read_tail(path, baseline[1])
+    if not tail:
         return False
 
     for line in tail.splitlines():
@@ -264,9 +343,10 @@ def desired_state(cfg):
         #
         # After the timeout the blink decays and the LED goes off. Set
         # "blink_timeout_seconds": 0 to blink indefinitely instead.
+        session_id = name[:-5]
+
         if state == "waiting":
             rec_ts = rec.get("ts", 0)
-            session_id = name[:-5]
             if blink_is_stale(session_id, rec_ts, now):
                 state = "idle"
             elif transcript_for(session_id) is None:
@@ -282,7 +362,10 @@ def desired_state(cfg):
         if state == "waiting":
             any_waiting = True
         elif state == "busy":
-            any_busy = True
+            if busy_is_stale(session_id, rec.get("ts", 0), now):
+                state = "idle"
+            else:
+                any_busy = True
 
     if any_waiting:
         return b"2"

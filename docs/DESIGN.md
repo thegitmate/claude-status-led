@@ -51,6 +51,24 @@ This matters because a timeout is indistinguishable from a bug when you are look
 
 This approach is borrowed from [Claw Light](https://clawlight.dev/), which watches session files rather than relying on hooks. [Agent Light](https://github.com/eternityspring/agent-light) is hook-driven and has the same blind spot.
 
+## Why an interrupted turn is detected from the transcript too
+
+Stopping Claude mid-work with Esc fires no hook either, so the session record stays `busy` and the LED stays lit until your next prompt.
+
+The transcript records it as a `user` entry whose content starts with `[Request interrupted by user`, in two forms:
+
+```
+[Request interrupted by user]
+[Request interrupted by user for tool use]
+```
+
+Two things this must not do:
+
+- **Match the text rather than the entry.** That exact phrase appears in ordinary assistant messages whenever interrupts are being discussed, including in this project's own conversations. Detection parses each entry and requires `type: "user"` with content starting with the marker.
+- **Treat silence as having stopped.** A single long tool call writes nothing for minutes while genuinely working, so a quiet transcript is not evidence of a stopped turn.
+
+A turn that dies from an API limit or a dropped connection is not proven to be covered, because it could not be reproduced. If it happens, `events.log` will show whether `StopFailure` fires, which is already registered and mapped to off.
+
 ## Why `PostToolUse` is registered despite firing constantly
 
 Answering a question and dismissing one **grow the transcript identically**, so the rule above cannot tell them apart. It cleared the blink to off in both cases, which meant the LED went dark the moment you answered and stayed dark while Claude worked.
@@ -65,7 +83,7 @@ Because it now runs on every tool call, the hook reuses the pid already in the s
 |---|---|---|
 | `busy` | Solid | `UserPromptSubmit`, `PostToolUse` |
 | `waiting` | Blink | `Notification`, `PermissionRequest` |
-| `idle` | Off | `SessionStart`, `Stop`, dismissal detected via transcript |
+| `idle` | Off | `SessionStart`, `Stop`, dismissal or interruption detected via transcript |
 
 `idle` is deliberately not special cased in the daemon. Anything that is neither `busy` nor `waiting` contributes nothing, so an idle session stays tracked for liveness while leaving the LED dark.
 

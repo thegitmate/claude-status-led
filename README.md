@@ -82,7 +82,9 @@ Picked up within 5 seconds, no restart.
 
 **LED dark but the log says `state -> 1`** Wiring. The daemon reports what it sent, it cannot see the light.
 
-**LED stuck on** Should be impossible: the firmware drops to off after 10s of silence. If it happens, reflash.
+**LED stays on after you stop Claude mid-answer** Interrupting fires no hook, so the daemon watches the transcript for the interrupt entry instead. Clears within a couple of seconds.
+
+**LED stuck on with no session running** The firmware drops to off after 10s of silence, so this should be impossible. If it happens, reflash.
 
 When anything is odd, read `~/.claude-status-led/events.log`. It shows exactly which events arrived.
 
