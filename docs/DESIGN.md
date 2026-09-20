@@ -51,6 +51,22 @@ This matters because a timeout is indistinguishable from a bug when you are look
 
 This approach is borrowed from [Claw Light](https://clawlight.dev/), which watches session files rather than relying on hooks. [Agent Light](https://github.com/eternityspring/agent-light) is hook-driven and has the same blind spot.
 
+## Claude Code publishes its own session status
+
+`~/.claude/sessions/<pid>.json` holds a live record per session:
+
+```json
+{"pid": 95237, "sessionId": "...", "status": "busy", "statusUpdatedAt": 1789914156334}
+```
+
+`status` is `busy`, `waiting` or `idle`, which maps one to one onto solid, blink and off. It needs no hooks, so it stays correct precisely where hooks fail.
+
+It is used here to force a session to off when Claude Code reports it idle. That fixes the last blind spot: **a prompt submitted and then cancelled before Claude begins replying fires no hook at all and writes no transcript entry.** Verified by registering every plausible event, including `MessageDisplay`, `UserPromptExpansion`, `TaskCompleted`, `PostToolBatch` and `PreCompact`, then cancelling a prompt: nothing whatsoever was emitted between the `UserPromptSubmit` and the next one.
+
+The hook and transcript logic still decides busy versus waiting. If you are building something similar from scratch, start from this file instead: it makes most of this document unnecessary.
+
+One caveat: the record is keyed by process id, so match on the `sessionId` field inside it and check the process is still alive.
+
 ## Why an interrupted turn is detected from the transcript too
 
 Stopping Claude mid-work with Esc fires no hook either, so the session record stays `busy` and the LED stays lit until your next prompt.

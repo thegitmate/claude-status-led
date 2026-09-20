@@ -66,7 +66,9 @@ EVENT_STATE = {
     "PermissionRequest": "waiting",
     "ElicitationResult": "busy",
     "PostToolUseFailure": "busy",
-    "SubagentStop": "busy",
+    # NOT SubagentStop: observed firing ~2s AFTER Stop at the end of an
+    # ordinary turn, which switched the LED back on after it had correctly
+    # gone out.
     # The turn ended abnormally (interrupt, error). Nothing wants you.
     "StopFailure": "idle",
 }

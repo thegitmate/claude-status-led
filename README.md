@@ -85,7 +85,9 @@ Picked up within 5 seconds, no restart.
 
 **LED stays on after you stop Claude mid-answer** Interrupting fires no hook, so the daemon watches the transcript for the interrupt entry instead. Clears within a couple of seconds.
 
-**LED stays on if you stop Claude before it replies** Nothing is written in that case, not even an interrupt marker, so it clears after `busy_silence_seconds` (60) instead. It cannot be made faster without switching the light off during slow replies, which take up to 59 seconds to produce their first output.
+**LED stays on if you stop Claude before it replies** Cleared using Claude Code's own session status at `~/.claude/sessions/<pid>.json`, which reports `idle` even though no hook fires and nothing is written to the transcript.
+
+**LED stays on if you stop Claude before it replies (fallback)** Nothing is written in that case, not even an interrupt marker, so it clears after `busy_silence_seconds` (60) instead. It cannot be made faster without switching the light off during slow replies, which take up to 59 seconds to produce their first output.
 
 **LED stuck on with no session running** The firmware drops to off after 10s of silence, so this should be impossible. If it happens, reflash.
 

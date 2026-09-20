@@ -294,6 +294,50 @@ def open_port(path):
     return fd
 
 
+CLAUDE_SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
+
+
+def claude_reported_status():
+    """
+    Read Claude Code's OWN per-session state from ~/.claude/sessions/<pid>.json.
+
+    Claude Code publishes a live record per session carrying a "status" of
+    "busy", "waiting" or "idle", which maps one to one onto solid, blink and
+    off. It is authoritative in a way nothing else here is: it needs no
+    hooks, so it stays correct in the cases where Claude Code fires no event
+    at all, above all a prompt submitted and then cancelled before Claude
+    began replying. That case emits no hook and writes no transcript entry,
+    so without this the LED stayed lit until something else happened.
+
+    Used here only to force a session to idle. The existing hook and
+    transcript logic still decides busy versus waiting.
+
+    Returns {session_id: status}, skipping records whose process has gone.
+    """
+    statuses = {}
+    try:
+        names = os.listdir(CLAUDE_SESSIONS_DIR)
+    except OSError:
+        return statuses
+
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(CLAUDE_SESSIONS_DIR, name)) as fh:
+                record = json.load(fh)
+        except Exception:
+            continue
+        session_id = record.get("sessionId")
+        pid = record.get("pid")
+        if not session_id or not isinstance(pid, int):
+            continue
+        if not pid_alive(pid):
+            continue
+        statuses[session_id] = record.get("status")
+    return statuses
+
+
 def pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -315,6 +359,8 @@ def desired_state(cfg):
         entries = os.listdir(SESSION_DIR)
     except OSError:
         return b"0"
+
+    reported = claude_reported_status()
 
     for name in entries:
         if not name.endswith(".json"):
@@ -361,6 +407,12 @@ def desired_state(cfg):
         # After the timeout the blink decays and the LED goes off. Set
         # "blink_timeout_seconds": 0 to blink indefinitely instead.
         session_id = name[:-5]
+
+        # Claude Code says this session is doing nothing. It knows better
+        # than any inference we make from hooks, which do not fire when a
+        # prompt is cancelled, so this wins outright.
+        if reported.get(session_id) == "idle":
+            continue
 
         if state == "waiting":
             rec_ts = rec.get("ts", 0)
