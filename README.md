@@ -103,7 +103,7 @@ Claude can read the serial port list, flash the board and read the daemon log, s
 
 - **`port`** pins a specific serial device. `null` means find it automatically.
 - **`stop_state`** controls what happens when Claude finishes its turn. `"idle"` (the default) turns the LED off, because a finished turn is not a request for anything. `"waiting"` blinks every time Claude stops. `"busy"` keeps it solid for the whole session.
-- **`blink_timeout_seconds`** is how long the LED may blink at an unanswered prompt before giving up, default 60. This exists because **Claude Code fires no hook when you dismiss a prompt with Esc**, and an interrupted turn does not fire `Stop` either. Without the timeout the light blinks at a question that is no longer on screen until you happen to send your next message. Set to `0` to blink indefinitely.
+- **`blink_timeout_seconds`** is a backstop, default 300. A blink normally clears within about five seconds through transcript watching (below); this only catches the case where the transcript cannot be found. Set to `0` to disable the backstop.
 - **`idle_notification_state`** handles the nudge Claude Code fires after roughly 60 seconds of idle input. `"idle"` (the default) ignores it, so stepping away from your desk does not start the light blinking. `"waiting"` blinks for it too.
 - **`stale_seconds`** is a safety net for session records whose process could not be identified.
 - **`event_log`** writes every hook event to `~/.claude-status-led/events.log`. Leave it on: when the LED does something you did not expect, that file tells you exactly which events arrived, rather than leaving you to guess. It is capped and trims itself.
@@ -151,11 +151,17 @@ The daemon only reports what it sent down the wire, it cannot see the light. If 
 
 ### LED keeps blinking after I dismissed a prompt
 
-It will stop by itself after `blink_timeout_seconds` (default 60).
+It should clear about five seconds after you press Esc. If it does not, check that the session's transcript can be found:
 
-The underlying cause is worth knowing, because it constrains what is possible here: Claude Code fires no hook when you press Esc on a permission prompt or a question, and an interrupted turn fires no `Stop` either. You can see this yourself in `~/.claude-status-led/events.log`: press Esc on a prompt and nothing is written between the `Notification` and your next message. There is therefore no event to listen for, which is why the blink is bounded by time instead.
+```bash
+ls ~/.claude/projects/*/$(ls -t ~/.claude-status-led/sessions | head -1 | sed 's/.json//').jsonl
+```
 
-If you want the light to keep blinking at a genuinely unanswered permission prompt no matter how long you are away, set `"blink_timeout_seconds": 0`, and accept that a dismissed prompt will then blink until your next message.
+**Why this needs explaining:** Claude Code fires no hook when you dismiss a prompt with Esc, and an interrupted turn fires no `Stop` either. You can verify this in `~/.claude-status-led/events.log`: press Esc and nothing at all is written between the `Notification` and your next message. Every purely hook-driven status light has this blind spot.
+
+The transcript does record it, though. Claude Code writes a live JSONL transcript per session, and a dismissal appends a tool result and an interrupt line within a second or two, while a genuinely pending prompt writes nothing at all because the session is blocked. So the daemon lets the transcript settle for three seconds, notes its size, and treats any later growth as proof the prompt is gone.
+
+Credit for the idea goes to [Claw Light](https://clawlight.dev/), which watches session files rather than relying on hooks.
 
 ### LED stuck on
 
@@ -189,6 +195,8 @@ Two design decisions worth explaining:
 
 - **Why a daemon rather than hooks writing to the serial port?** Opening a serial port pulls DTR, which resets the Nano. Doing that on every hook would mean a board reset and a bootloader stall several times per prompt. The daemon opens the port once and holds it.
 - **Why does the blinking happen on the Arduino?** So the rhythm never depends on the Mac. The daemon sends "blink" once, and the board handles it from there.
+
+A blinking session is cleared by watching its transcript grow, not by an event, because no dismissal event exists. See the troubleshooting section for why.
 
 Dead sessions are detected by process id. The hook walks up its parent chain to find the owning `claude` process and records its pid; the daemon drops any record whose process has gone. This matters because a session killed with ctrl-C or a closed terminal never fires `SessionEnd`.
 

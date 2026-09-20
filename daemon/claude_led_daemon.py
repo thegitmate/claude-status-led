@@ -20,8 +20,10 @@ sessions can be open at once, so the states are aggregated:
 any session waiting wins, otherwise any session working wins,
 otherwise the LED is off.
 
-A "waiting" record decays to off after blink_timeout_seconds, because
-nothing tells us when a dismissed prompt went away. See desired_state.
+A "waiting" record is cleared as soon as the session's transcript grows,
+which is how a dismissed prompt is detected: Claude Code fires no hook for
+it, but it does write one. blink_timeout_seconds remains as a backstop.
+See blink_is_stale.
 
 A session record may also hold the state "idle", meaning the session is
 open but nothing wants your attention. It is deliberately not special
@@ -46,7 +48,66 @@ SESSION_DIR = os.path.join(STATE_DIR, "sessions")
 CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
 
 POLL_SECONDS = 0.2          # how often we re-read session state
-BLINK_TIMEOUT_DEFAULT = 60  # max seconds to blink unanswered; 0 = forever
+BLINK_TIMEOUT_DEFAULT = 300 # backstop only; transcript watching does the real work
+BLINK_GRACE_SECONDS = 3     # settle time before we trust the transcript baseline
+
+TRANSCRIPT_ROOT = os.path.join(HOME, ".claude", "projects")
+
+# sid -> transcript path, and sid -> (record ts, transcript size at grace point)
+_transcript_paths = {}
+_blink_baselines = {}
+
+
+def transcript_for(session_id):
+    """
+    Locate a session's live JSONL transcript. Claude Code names it after the
+    session id, so the session file name is enough to find it. Cached,
+    because this globs the project tree.
+    """
+    cached = _transcript_paths.get(session_id)
+    if cached and os.path.exists(cached):
+        return cached
+    if cached is False:
+        return None
+    matches = glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", session_id + ".jsonl"),
+                        recursive=True)
+    path = matches[0] if matches else None
+    _transcript_paths[session_id] = path if path else False
+    return path
+
+
+def blink_is_stale(session_id, rec_ts, now):
+    """
+    Decide whether a blinking prompt has already been answered or dismissed.
+
+    Claude Code fires no hook when you press Esc, so there is no event to
+    listen for. The transcript, however, records it: a dismissal appends a
+    tool_result and an interrupt line within a second or two. While a prompt
+    really is pending, the session is blocked and writes nothing.
+
+    So: let the transcript settle for a few seconds, note its size, and treat
+    any later growth as proof the prompt is gone.
+    """
+    path = transcript_for(session_id)
+    if not path:
+        return False                      # no transcript, fall back to timeout
+
+    age = now - rec_ts
+    if age < BLINK_GRACE_SECONDS:
+        return False                      # too early to trust a baseline
+
+    baseline = _blink_baselines.get(session_id)
+    if baseline is None or baseline[0] != rec_ts:
+        try:
+            _blink_baselines[session_id] = (rec_ts, os.path.getsize(path))
+        except OSError:
+            pass
+        return False
+
+    try:
+        return os.path.getsize(path) > baseline[1]
+    except OSError:
+        return False
 PING_SECONDS = 2.0          # heartbeat interval, must be < firmware watchdog
 REOPEN_SECONDS = 2.0        # retry cadence when the board is missing
 STALE_SECONDS_DEFAULT = 12 * 3600
@@ -170,9 +231,14 @@ def desired_state(cfg):
         # After the timeout the blink decays and the LED goes off. Set
         # "blink_timeout_seconds": 0 to blink indefinitely instead.
         if state == "waiting":
-            timeout = cfg.get("blink_timeout_seconds", BLINK_TIMEOUT_DEFAULT)
-            if timeout and (now - rec.get("ts", 0)) > timeout:
+            rec_ts = rec.get("ts", 0)
+            session_id = name[:-5]
+            if blink_is_stale(session_id, rec_ts, now):
                 state = "idle"
+            else:
+                timeout = cfg.get("blink_timeout_seconds", BLINK_TIMEOUT_DEFAULT)
+                if timeout and (now - rec_ts) > timeout:
+                    state = "idle"
 
         if state == "waiting":
             any_waiting = True
