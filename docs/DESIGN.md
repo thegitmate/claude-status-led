@@ -59,7 +59,7 @@ This approach is borrowed from [Claw Light](https://clawlight.dev/), which watch
 `~/.claude/sessions/<pid>.json` holds a live record per session:
 
 ```json
-{"pid": 95237, "sessionId": "...", "status": "busy", "statusUpdatedAt": 1789914156334}
+{"pid": 12345, "sessionId": "...", "status": "busy", "statusUpdatedAt": 1700000000000}
 ```
 
 `status` takes four values:

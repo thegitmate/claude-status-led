@@ -7,7 +7,7 @@ Everything below was hit while building this project in a single afternoon. Each
 **Claude Code publishes its own live session state.** `~/.claude/sessions/<pid>.json`:
 
 ```json
-{"pid": 95237, "sessionId": "0d5c2d00-...", "status": "busy", "statusUpdatedAt": 1789914156334}
+{"pid": 12345, "sessionId": "a1b2c3d4-...", "status": "busy", "statusUpdatedAt": 1700000000000}
 ```
 
 | status | meaning |

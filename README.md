@@ -110,7 +110,11 @@ Claude Code writes a live record per session carrying a `status` of `busy`, `wai
 
 **No hooks.** An earlier version used them and needed transcript parsing, timeouts and a silence fallback to cover the cases where Claude Code fires nothing, at a cost of a process spawn on every tool call. Reading Claude Code's own state removed all of it.
 
-Several decisions here are non-obvious and were arrived at by being wrong first. See **[docs/DESIGN.md](docs/DESIGN.md)** for why it is built this way, and **[docs/LESSONS.md](docs/LESSONS.md)** for everything that went wrong and how it was found, which is the useful document if you are building something similar.
+Further reading:
+
+- **[docs/LESSONS.md](docs/LESSONS.md)** what goes wrong building one of these, and how each was found. The useful document if you are building something similar.
+- **[docs/DESIGN.md](docs/DESIGN.md)** why it is built this way.
+- **[docs/OTHER-AGENTS.md](docs/OTHER-AGENTS.md)** notes on extending it to Codex CLI, OpenCode and Grok Build.
 
 ## Uninstall
 

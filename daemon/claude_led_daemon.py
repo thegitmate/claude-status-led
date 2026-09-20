@@ -12,7 +12,7 @@ Reads Claude Code's own session state and pushes one byte to the Arduino:
 State comes from ~/.claude/sessions/<pid>.json, which Claude Code writes
 and keeps current by itself:
 
-    {"pid": 95237, "sessionId": "...", "status": "busy", ...}
+    {"pid": 12345, "sessionId": "...", "status": "busy", ...}
 
     busy     working                              -> solid
     waiting  wants something from you             -> blink
