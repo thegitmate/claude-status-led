@@ -101,7 +101,7 @@ Claude Code ──hooks──► session files ──► daemon ──serial─�
 
 One JSON file per session, aggregated by a launchd daemon that holds the serial port and sends one byte: `0` off, `1` on, `2` blink, `p` heartbeat. Blinking runs on the board, so its rhythm never depends on the Mac.
 
-Several decisions here are non-obvious and were arrived at by being wrong first. See **[docs/DESIGN.md](docs/DESIGN.md)**.
+Several decisions here are non-obvious and were arrived at by being wrong first. See **[docs/DESIGN.md](docs/DESIGN.md)** for why it is built this way, and **[docs/LESSONS.md](docs/LESSONS.md)** for everything that went wrong and how it was found, which is the useful document if you are building something similar.
 
 ## Uninstall
 
