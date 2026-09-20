@@ -296,6 +296,20 @@ def open_port(path):
 
 CLAUDE_SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
 
+# Claude Code's own status values, and which of them mean "not working".
+#
+#   busy     working
+#   waiting  wants something from you
+#   idle     session doing nothing
+#   shell    back at the input prompt, awaiting your next message
+#
+# "shell" is the important one and the name is misleading: it does NOT mean
+# a shell command is running. During an actual Bash tool call the status is
+# "busy". It appears the moment a turn ends, and, crucially, the moment a
+# submitted prompt is cancelled, which is the one case that fires no hook
+# and writes nothing to the transcript.
+NOT_WORKING_STATUSES = ("idle", "shell")
+
 
 def claude_reported_status():
     """
@@ -309,8 +323,8 @@ def claude_reported_status():
     began replying. That case emits no hook and writes no transcript entry,
     so without this the LED stayed lit until something else happened.
 
-    Used here only to force a session to idle. The existing hook and
-    transcript logic still decides busy versus waiting.
+    Used here only to force a session off. The existing hook and transcript
+    logic still decides busy versus waiting.
 
     Returns {session_id: status}, skipping records whose process has gone.
     """
@@ -411,7 +425,7 @@ def desired_state(cfg):
         # Claude Code says this session is doing nothing. It knows better
         # than any inference we make from hooks, which do not fire when a
         # prompt is cancelled, so this wins outright.
-        if reported.get(session_id) == "idle":
+        if reported.get(session_id) in NOT_WORKING_STATUSES:
             continue
 
         if state == "waiting":

@@ -59,7 +59,18 @@ This approach is borrowed from [Claw Light](https://clawlight.dev/), which watch
 {"pid": 95237, "sessionId": "...", "status": "busy", "statusUpdatedAt": 1789914156334}
 ```
 
-`status` is `busy`, `waiting` or `idle`, which maps one to one onto solid, blink and off. It needs no hooks, so it stays correct precisely where hooks fail.
+`status` takes four values:
+
+| status | meaning |
+|---|---|
+| `busy` | working |
+| `waiting` | wants something from you |
+| `idle` | session doing nothing |
+| `shell` | back at the input prompt, awaiting your next message |
+
+It needs no hooks, so it stays correct precisely where hooks fail.
+
+**`shell` is the important one, and its name is misleading.** It does not mean a shell command is running; during an actual Bash tool call the status is `busy`. It appears the moment a turn ends, and the moment a submitted prompt is cancelled. That second case is the one nothing else can see, so `idle` and `shell` are both treated as "not working".
 
 It is used here to force a session to off when Claude Code reports it idle. That fixes the last blind spot: **a prompt submitted and then cancelled before Claude begins replying fires no hook at all and writes no transcript entry.** Verified by registering every plausible event, including `MessageDisplay`, `UserPromptExpansion`, `TaskCompleted`, `PostToolBatch` and `PreCompact`, then cancelling a prompt: nothing whatsoever was emitted between the `UserPromptSubmit` and the next one.
 
