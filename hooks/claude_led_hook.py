@@ -51,6 +51,10 @@ EVENT_STATE = {
     "SessionStart": "idle",
     "UserPromptSubmit": "busy",
     "PreToolUse": "busy",
+    # PostToolUse is what distinguishes ANSWERING a question from DISMISSING
+    # one. Both grow the transcript, so the daemon cannot tell them apart,
+    # but only an answer completes the tool and fires this. Without it, the
+    # LED goes dark the moment you answer and stays dark while Claude works.
     "PostToolUse": "busy",
     "Notification": "waiting",
     "Stop": "idle",
@@ -195,12 +199,29 @@ def main():
     elif event == "Notification":
         state = notification_state(payload, cfg)
 
+    # Reuse the pid from the existing record when its process is still alive.
+    # PostToolUse fires on every single tool call, and walking the parent
+    # chain with ps each time would put ~50ms of subprocess work in the path
+    # of everything Claude does. Reading one small file is far cheaper.
+    pid = None
+    try:
+        with open(path) as fh:
+            previous = json.load(fh)
+        candidate = previous.get("pid")
+        if isinstance(candidate, int):
+            os.kill(candidate, 0)
+            pid = candidate
+    except Exception:
+        pid = None
+    if pid is None:
+        pid = find_claude_pid()
+
     record = {
         "state": state,
         "event": event,
         "ts": time.time(),
         "message": str(payload.get("message", ""))[:200],
-        "pid": find_claude_pid(),
+        "pid": pid,
     }
 
     log_event(event, state, payload, cfg)

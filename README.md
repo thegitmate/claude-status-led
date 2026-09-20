@@ -179,7 +179,7 @@ Claude Code ──hooks──► session files ──► daemon ──serial─�
 
 | Hook event | State written |
 |---|---|
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `busy` |
+| `UserPromptSubmit`, `PostToolUse` | `busy` |
 | `Notification` (permission or question) | `waiting` |
 | `Notification` (60s idle nudge) | `idle` |
 | `SessionStart`, `Stop` | `idle` |
@@ -197,6 +197,10 @@ Two design decisions worth explaining:
 - **Why does the blinking happen on the Arduino?** So the rhythm never depends on the Mac. The daemon sends "blink" once, and the board handles it from there.
 
 A blinking session is cleared by watching its transcript grow, not by an event, because no dismissal event exists. See the troubleshooting section for why.
+
+Answering a question and dismissing one both grow the transcript identically, so the transcript cannot tell them apart. `PostToolUse` does: only an answer completes the tool. That is why it is registered despite firing on every tool call, and why the hook reuses a cached pid rather than walking the process tree each time (21ms instead of about 70ms).
+
+**Several sessions at once** are aggregated, so the light reflects whichever session most wants you, not whichever terminal you are looking at. If any session is blocked on you it blinks, even if that session is buried behind other windows. Otherwise, if any session is working it stays solid. Only when nothing is working and nothing is waiting does it go off.
 
 Dead sessions are detected by process id. The hook walks up its parent chain to find the owning `claude` process and records its pid; the daemon drops any record whose process has gone. This matters because a session killed with ctrl-C or a closed terminal never fires `SessionEnd`.
 

@@ -56,6 +56,9 @@ EVENTS = [
     "PermissionDenied",
     "ElicitationResult",
     "PostToolUseFailure",
+    # Fires when a tool completes, including a question you answered. This is
+    # the only signal that separates answering from dismissing.
+    "PostToolUse",
     "Stop",
     "StopFailure",
     "SessionEnd",
