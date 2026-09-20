@@ -20,6 +20,9 @@ sessions can be open at once, so the states are aggregated:
 any session waiting wins, otherwise any session working wins,
 otherwise the LED is off.
 
+A "waiting" record decays to off after blink_timeout_seconds, because
+nothing tells us when a dismissed prompt went away. See desired_state.
+
 A session record may also hold the state "idle", meaning the session is
 open but nothing wants your attention. It is deliberately not special
 cased below: anything that is neither "waiting" nor "busy" contributes
@@ -43,6 +46,7 @@ SESSION_DIR = os.path.join(STATE_DIR, "sessions")
 CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
 
 POLL_SECONDS = 0.2          # how often we re-read session state
+BLINK_TIMEOUT_DEFAULT = 60  # max seconds to blink unanswered; 0 = forever
 PING_SECONDS = 2.0          # heartbeat interval, must be < firmware watchdog
 REOPEN_SECONDS = 2.0        # retry cadence when the board is missing
 STALE_SECONDS_DEFAULT = 12 * 3600
@@ -152,6 +156,24 @@ def desired_state(cfg):
             continue
 
         state = rec.get("state")
+
+        # Bound how long a blink can last.
+        #
+        # Claude Code fires NO hook when you dismiss a prompt with Esc, and an
+        # interrupted turn does not fire Stop either (verified by logging every
+        # event to events.log and pressing Esc). So there is no event that can
+        # tell us a question went away. Without a timeout the LED blinks at a
+        # prompt that is no longer on screen until you happen to send your next
+        # message, which is worse than not blinking at all: a light that lies
+        # is a light you learn to ignore.
+        #
+        # After the timeout the blink decays and the LED goes off. Set
+        # "blink_timeout_seconds": 0 to blink indefinitely instead.
+        if state == "waiting":
+            timeout = cfg.get("blink_timeout_seconds", BLINK_TIMEOUT_DEFAULT)
+            if timeout and (now - rec.get("ts", 0)) > timeout:
+                state = "idle"
+
         if state == "waiting":
             any_waiting = True
         elif state == "busy":

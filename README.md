@@ -103,8 +103,10 @@ Claude can read the serial port list, flash the board and read the daemon log, s
 
 - **`port`** pins a specific serial device. `null` means find it automatically.
 - **`stop_state`** controls what happens when Claude finishes its turn. `"idle"` (the default) turns the LED off, because a finished turn is not a request for anything. `"waiting"` blinks every time Claude stops. `"busy"` keeps it solid for the whole session.
+- **`blink_timeout_seconds`** is how long the LED may blink at an unanswered prompt before giving up, default 60. This exists because **Claude Code fires no hook when you dismiss a prompt with Esc**, and an interrupted turn does not fire `Stop` either. Without the timeout the light blinks at a question that is no longer on screen until you happen to send your next message. Set to `0` to blink indefinitely.
 - **`idle_notification_state`** handles the nudge Claude Code fires after roughly 60 seconds of idle input. `"idle"` (the default) ignores it, so stepping away from your desk does not start the light blinking. `"waiting"` blinks for it too.
 - **`stale_seconds`** is a safety net for session records whose process could not be identified.
+- **`event_log`** writes every hook event to `~/.claude-status-led/events.log`. Leave it on: when the LED does something you did not expect, that file tells you exactly which events arrived, rather than leaving you to guess. It is capped and trims itself.
 
 Changes are picked up within about five seconds, no restart needed.
 
@@ -146,6 +148,14 @@ If you change the code, **re-run `install.sh`** to copy the new version across. 
 ### LED stays dark but the daemon log looks right
 
 The daemon only reports what it sent down the wire, it cannot see the light. If the log shows `state -> 1` and nothing lights up, it is the wiring: LED in backwards, wrong pin, or a loose GND.
+
+### LED keeps blinking after I dismissed a prompt
+
+It will stop by itself after `blink_timeout_seconds` (default 60).
+
+The underlying cause is worth knowing, because it constrains what is possible here: Claude Code fires no hook when you press Esc on a permission prompt or a question, and an interrupted turn fires no `Stop` either. You can see this yourself in `~/.claude-status-led/events.log`: press Esc on a prompt and nothing is written between the `Notification` and your next message. There is therefore no event to listen for, which is why the blink is bounded by time instead.
+
+If you want the light to keep blinking at a genuinely unanswered permission prompt no matter how long you are away, set `"blink_timeout_seconds": 0`, and accept that a dismissed prompt will then blink until your next message.
 
 ### LED stuck on
 

@@ -2,5 +2,7 @@
   "port": null,
   "stop_state": "idle",
   "idle_notification_state": "idle",
-  "stale_seconds": 43200
+  "blink_timeout_seconds": 60,
+  "stale_seconds": 43200,
+  "event_log": true
 }

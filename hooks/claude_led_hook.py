@@ -54,6 +54,17 @@ EVENT_STATE = {
     "PostToolUse": "busy",
     "Notification": "waiting",
     "Stop": "idle",
+    # Clearing events. A blink must be cancellable: if you dismiss a prompt
+    # with Esc rather than answering it, something has to say so, or the LED
+    # keeps blinking until your next message. These all mean "whatever was
+    # blocking is resolved", so they put the LED back to solid.
+    "PermissionDenied": "busy",
+    "PermissionRequest": "waiting",
+    "ElicitationResult": "busy",
+    "PostToolUseFailure": "busy",
+    "SubagentStop": "busy",
+    # The turn ended abnormally (interrupt, error). Nothing wants you.
+    "StopFailure": "idle",
 }
 
 
@@ -97,6 +108,36 @@ def find_claude_pid():
         except ValueError:
             return None
     return None
+
+
+def log_event(event, state, payload, cfg):
+    """
+    Append every event to ~/.claude-status-led/events.log.
+
+    This exists because the set of events Claude Code fires when you DISMISS
+    a prompt (rather than answer it) is not obvious, and guessing wrong
+    leaves the LED blinking at nothing. With this log you can press Esc and
+    read back exactly what arrived. Set "event_log": false to turn it off.
+    """
+    if not cfg.get("event_log", True):
+        return
+    path = os.path.join(STATE_DIR, "events.log")
+    try:
+        # Keep it bounded; this is a debugging aid, not an archive.
+        if os.path.exists(path) and os.path.getsize(path) > 200000:
+            with open(path) as fh:
+                tail = fh.readlines()[-200:]
+            with open(path, "w") as fh:
+                fh.writelines(tail)
+        with open(path, "a") as fh:
+            fh.write("%s  %-20s -> %-8s %s\n" % (
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                event,
+                state,
+                str(payload.get("message", ""))[:120],
+            ))
+    except Exception:
+        pass
 
 
 def notification_state(payload, cfg):
@@ -145,6 +186,7 @@ def main():
 
     state = EVENT_STATE.get(event)
     if state is None:
+        log_event(event, "(ignored)", payload, load_config())
         return
 
     cfg = load_config()
@@ -160,6 +202,8 @@ def main():
         "message": str(payload.get("message", ""))[:200],
         "pid": find_claude_pid(),
     }
+
+    log_event(event, state, payload, cfg)
 
     try:
         os.makedirs(SESSION_DIR, exist_ok=True)

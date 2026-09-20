@@ -45,7 +45,23 @@ if os.path.exists(settings_path):
         raise SystemExit(1)
 
 hooks = data.setdefault("hooks", {})
-for event in ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"]:
+EVENTS = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "Notification",
+    "PermissionRequest",
+    # Dismissal paths. Without these, pressing Esc on a prompt leaves the LED
+    # blinking at a question that is no longer on screen, until you happen to
+    # send your next message.
+    "PermissionDenied",
+    "ElicitationResult",
+    "PostToolUseFailure",
+    "Stop",
+    "StopFailure",
+    "SessionEnd",
+]
+
+for event in EVENTS:
     command = "/usr/bin/python3 %s %s" % (hook, event)
     entries = hooks.setdefault(event, [])
     # Drop any previous install of ours, then add a fresh entry.
