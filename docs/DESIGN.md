@@ -30,10 +30,18 @@ A purely hook-driven status light therefore blinks at a question that is no long
 
 The transcript does record it. Claude Code writes a live JSONL file per session at `~/.claude/projects/*/<session_id>.jsonl`, and the asymmetry is the signal:
 
-- A **pending** prompt writes nothing, because the session is blocked waiting.
-- A **dismissed** prompt appends a tool result and an interrupt line within a second or two.
+- A **dismissed** prompt appends a tool result and an interrupt line within a second or two, both `type: "user"`.
+- A **pending** prompt appends only housekeeping.
 
-So the daemon lets the transcript settle for 3 seconds, snapshots its size, and clears the blink as soon as it grows. Latency is about 5 seconds.
+That second point cost a bug. A pending prompt is not a silent transcript: Claude Code keeps appending untimestamped lines the whole time you are looking at the question.
+
+```
+file-history-snapshot, last-prompt, ai-title, mode, permission-mode, atis-latch
+```
+
+The first version treated any growth as resolution, so one of those would kill the blink around a minute into an unanswered prompt, long before the user replied.
+
+So the daemon settles for 3 seconds, records a byte offset, and on growth reads only what was appended, clearing the blink only if an entry of type `user`, `assistant` or `system` appears. Latency is about 5 seconds.
 
 This approach is borrowed from [Claw Light](https://clawlight.dev/), which watches session files rather than relying on hooks. [Agent Light](https://github.com/eternityspring/agent-light) is hook-driven and has the same blind spot.
 

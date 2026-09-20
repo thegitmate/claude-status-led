@@ -76,17 +76,34 @@ def transcript_for(session_id):
     return path
 
 
+# Transcript entry types that represent an actual conversational turn.
+# Everything else Claude Code writes is housekeeping.
+CONVERSATION_TYPES = ("user", "assistant", "system")
+
+# Housekeeping Claude Code appends while a prompt is sitting unanswered:
+# file-history-snapshot, last-prompt, ai-title, mode, permission-mode,
+# atis-latch. These must NOT be read as "the prompt went away".
+
+MAX_TAIL_BYTES = 2 * 1024 * 1024
+
+
 def blink_is_stale(session_id, rec_ts, now):
     """
     Decide whether a blinking prompt has already been answered or dismissed.
 
     Claude Code fires no hook when you press Esc, so there is no event to
-    listen for. The transcript, however, records it: a dismissal appends a
-    tool_result and an interrupt line within a second or two. While a prompt
-    really is pending, the session is blocked and writes nothing.
+    listen for. The transcript does record it, as a tool_result plus an
+    interrupt line within a second or two.
 
-    So: let the transcript settle for a few seconds, note its size, and treat
-    any later growth as proof the prompt is gone.
+    The subtlety: a pending prompt is NOT a silent transcript. Claude Code
+    keeps appending housekeeping lines (last-prompt, ai-title, mode,
+    permission-mode, atis-latch, file-history-snapshot) the whole time you
+    are looking at the question. An earlier version of this treated any
+    growth as resolution, which killed the blink roughly a minute into an
+    unanswered prompt.
+
+    So we read what was actually appended and only count a real
+    conversational entry.
     """
     path = transcript_for(session_id)
     if not path:
@@ -104,10 +121,27 @@ def blink_is_stale(session_id, rec_ts, now):
             pass
         return False
 
+    offset = baseline[1]
     try:
-        return os.path.getsize(path) > baseline[1]
+        if os.path.getsize(path) <= offset:
+            return False
+        with open(path, "rb") as fh:
+            fh.seek(offset)
+            tail = fh.read(MAX_TAIL_BYTES)
     except OSError:
         return False
+
+    for line in tail.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line.decode("utf-8", "replace"))
+        except Exception:
+            continue                      # partial write, try again next poll
+        if entry.get("type") in CONVERSATION_TYPES:
+            return True
+    return False
 PING_SECONDS = 2.0          # heartbeat interval, must be < firmware watchdog
 REOPEN_SECONDS = 2.0        # retry cadence when the board is missing
 STALE_SECONDS_DEFAULT = 12 * 3600
